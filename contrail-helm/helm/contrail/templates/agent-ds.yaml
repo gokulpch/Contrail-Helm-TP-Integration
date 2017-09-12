@@ -1,0 +1,114 @@
+# hostOs is a mandatory field
+{{- $_ := required ".Values.hostOS must be specified, valid values are ubuntu, centos" .Values.hostOs }}
+apiVersion: extensions/v1beta1
+kind: DaemonSet
+metadata:
+  name: contrail-vrouter-agent
+  namespace: kube-system
+  labels:
+    app: contrail-cni
+    chart: "{{ .Chart.Name }}-{{ .Chart.Version }}"
+spec:
+  template:
+    metadata:
+      labels:
+        app: contrail-cni
+        contrail_function: "contrail-vrouter-agent"
+    spec:
+      tolerations:
+      - key: node-role.kubernetes.io/master
+        operator: Exists
+        effect: NoSchedule
+      hostNetwork: true
+      automountServiceAccountToken: false
+      initContainers:
+{{- if eq .Values.hostOs "centos" }}
+{{- $_ := required ".Values.images.vrouterCompiler must be specified, if hostOS is centos" .Values.images.vrouterCompiler }}
+      - name: contrail-vrouter-compiler
+        image: {{ .Values.images.vrouterCompiler | quote }}
+        imagePullPolicy: {{ default "" .Values.images.imagePullPolicy | quote }}
+        securityContext:
+          privileged: true
+        volumeMounts:
+        - mountPath: /lib/modules
+          name: lib-modules
+        - mountPath: /usr/src/kernels
+          name: usr-src-kernels
+        env:
+        - name: INSTALL_VROUTER_MODULE
+          value: 'true'
+{{- end }}
+      - name: contrail-kubernetes-agent
+        image: {{ .Values.images.kubernetesAgent | quote }}
+        imagePullPolicy: {{ default "" .Values.images.imagePullPolicy | quote }}
+        securityContext:
+          privileged: true
+        volumeMounts:
+        - mountPath: /tmp/contrailctl
+          name: tmp-contrail-config
+        - mountPath: /var/lib/contrail/
+          name: contrail-varlib
+        - mountPath: /host/etc_cni
+          name: etc-cni
+        - mountPath: /host/opt_cni_bin
+          name: opt-cni-bin
+        - mountPath: /var/log/contrail/cni
+          name: var-log-contrail-cni 
+      containers:
+      - name: contrail-agent
+        image: {{ .Values.images.vrouterAgent | quote }}
+        imagePullPolicy: {{ default "" .Values.imagePullPolicy | quote }}
+        securityContext:
+          privileged: true
+        volumeMounts:
+        - mountPath: /tmp/contrailctl
+          name: tmp-contrail-config
+        - mountPath: /lib/modules
+          name: lib-modules
+        - mountPath: /usr/src
+          name: usr-src
+        - mountPath: /host/opt_cni_bin
+          name: opt-cni-bin
+        - mountPath: /host/etc_cni
+          name: etc-cni
+        - mountPath: /var/lib/contrail/
+          name: contrail-varlib
+        # This is a workaround just to make sure the directory is created on host
+        - mountPath: /var/log/contrail/cni
+          name: var-log-contrail-cni
+      volumes:
+      - name: tmp-contrail-config
+        configMap:
+          name: contrailctl-config
+          items:
+          - key: global-config
+            path: global.conf
+          - key: agent-config
+            path: agent.conf
+          - key: kubemanager-config
+            path: kubemanager.conf
+          - key: kubernetes-agent-config
+            path: kubernetesagent.conf
+      - name: lib-modules
+        hostPath:
+          path: /lib/modules
+      - name: usr-src
+        hostPath:
+          path: /usr/src
+{{- if eq .Values.hostOs "centos" }}
+      - name: usr-src-kernels
+        hostPath:
+          path: /usr/src/kernels
+{{- end }}
+      - name: opt-cni-bin
+        hostPath:
+          path: /opt/pf9/pf9-kube/cni-bin
+      - name: etc-cni
+        hostPath:
+          path: /etc/cni
+      - name: contrail-varlib
+        hostPath:
+          path: /var/lib/contrail/
+      - name: var-log-contrail-cni
+        hostPath:
+          path: /var/log/contrail/cni/

@@ -1,0 +1,51 @@
+apiVersion: extensions/v1beta1
+kind: DaemonSet
+metadata:
+  name: contrail-kube-manager
+  namespace: kube-system
+  labels:
+    app: contrail-cni
+    chart: "{{ .Chart.Name }}-{{ .Chart.Version }}"
+spec:
+  template:
+    metadata:
+      labels:
+        app: contrail-cni 
+        contrail_function: contrail-kube-manager
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: "opencontrail.org/controller"
+                operator: In
+                values:
+                - "true"
+            - matchExpressions:
+              - key: "node-role.kubernetes.io/master"
+                operator: Exists
+      tolerations:
+      - key: node-role.kubernetes.io/master
+        operator: Exists
+        effect: NoSchedule
+      hostNetwork: true
+      automountServiceAccountToken: false
+      containers:
+      - name: contrail-kube-manager
+        image: {{ .Values.images.kubemanager | quote }}
+        imagePullPolicy: {{ default "" .Values.images.imagePullPolicy | quote }}
+        securityContext:
+          privileged: true
+        volumeMounts:
+        - mountPath: /tmp/contrailctl
+          name: contrailctl-kube-manager
+      volumes:
+      - name: contrailctl-kube-manager
+        configMap:
+          name: contrailctl-config
+          items:
+          - key: kubemanager-config
+            path: kubemanager.conf
+          - key: global-config
+            path: global.conf  

@@ -1,0 +1,58 @@
+apiVersion: extensions/v1beta1
+kind: DaemonSet
+metadata:
+  name: contrail-analyticsdb
+  namespace: kube-system
+  labels:
+    app: contrail-cni
+    chart: "{{ .Chart.Name }}-{{ .Chart.Version }}"
+spec:
+  template:
+    metadata:
+      labels:
+        app: contrail-cni
+        contrail_function: contrail-analyticsdb
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: "opencontrail.org/controller"
+                operator: In
+                values:
+                - "true"
+            - matchExpressions:
+              - key: "node-role.kubernetes.io/master"
+                operator: Exists
+      tolerations:
+      - key: node-role.kubernetes.io/master
+        operator: Exists
+        effect: NoSchedule
+      hostNetwork: true
+      containers:
+      - name: contrail-analyticsdb
+        image: {{ .Values.images.analyticsdb }}
+        imagePullPolicy: {{ default "" .Values.images.imagePullPolicy | quote }}
+        securityContext:
+          privileged: true
+        volumeMounts:
+        - mountPath: /etc/contrailctl
+          name: contrailctl-analyticsdb
+        - mountPath: /var/lib/cassandra
+          name: analyticsdb-data
+        - mountPath: /var/lib/zookeeper
+          name: zookeeper-analyticsdb-data
+      volumes:
+      - name: contrailctl-analyticsdb
+        configMap:
+          name: contrailctl-config
+          items:
+          - key: analyticsdb-config
+            path: analyticsdb.conf
+      - name: analyticsdb-data
+        hostPath:
+          path: /var/lib/analyticsdb 
+      - name: zookeeper-analyticsdb-data
+        hostPath:
+          path: /var/lib/analyticsdb_zookeeper_data
